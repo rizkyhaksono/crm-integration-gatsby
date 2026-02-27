@@ -1,46 +1,34 @@
+﻿import { Box, Text } from "theme-ui"
 import * as React from "react"
-import { Link, HeadFC, PageProps } from "gatsby"
-
-const pageStyles = {
-  color: "#232129",
-  padding: "96px",
-  fontFamily: "-apple-system, Roboto, sans-serif, serif",
-}
-const headingStyles = {
-  marginTop: 0,
-  marginBottom: 64,
-  maxWidth: 320,
-}
-
-const paragraphStyles = {
-  marginBottom: 48,
-}
-const codeStyles = {
-  color: "#8A6534",
-  padding: 4,
-  backgroundColor: "#FFF4DB",
-  fontSize: "1.25rem",
-  borderRadius: 4,
-}
+import { Link } from "gatsby"
+import type { HeadFC, PageProps } from "gatsby"
 
 const NotFoundPage: React.FC<PageProps> = () => {
   return (
-    <main style={pageStyles}>
-      <h1 style={headingStyles}>Page not found</h1>
-      <p style={paragraphStyles}>
-        Sorry 😔, we couldn’t find what you were looking for.
+    <Box as="main" sx={{ color: "text", p: 9, fontFamily: "body" }}>
+      <Text as="h1" sx={{ mt: 0, mb: 9, maxWidth: 320, fontWeight: "bold", fontSize: 8 }}>
+        Page not found
+      </Text>
+      <Text as="p" sx={{ mb: 8, fontSize: 3 }}>
+        Sorry, we could not find what you were looking for.
         <br />
         {process.env.NODE_ENV === "development" ? (
           <>
             <br />
-            Try creating a page in <code style={codeStyles}>src/pages/</code>.
-            <br />
+            Try creating a page in{" "}
+            <Box as="code" sx={{ color: "#8A6534", p: "2px 6px", bg: "#FFF4DB", fontSize: "1.1em", borderRadius: "sm" }}>
+              src/pages/
+            </Box>
+            .<br />
           </>
         ) : null}
         <br />
-        <Link to="/">Go home</Link>.
-      </p>
-    </main>
+        <Link to="/" sx={{ color: "primary" }}>
+          Go home
+        </Link>
+        .
+      </Text>
+    </Box>
   )
 }
 

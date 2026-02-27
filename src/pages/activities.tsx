@@ -1,6 +1,9 @@
+import { Box, Flex, Grid, Text, Button } from "theme-ui"
 import * as React from "react"
+import { Link } from "gatsby"
 import type { HeadFC, PageProps } from "gatsby"
 import Layout from "../components/Layout"
+import { useSettings, fetchAirtableTable } from "../hooks/useSettings"
 
 interface Activity {
   id: number
@@ -103,256 +106,313 @@ const mockActivities: Activity[] = [
   },
 ]
 
-const upcomingTasks = mockActivities.filter((a) => !a.completed)
-const todayActivities = mockActivities.filter((a) => a.date === "20 Feb 2026")
+interface AirtableActivityFields {
+  Title?: string
+  Type?: string
+  Description?: string
+  Contact?: string
+  Company?: string
+  Date?: string
+  Time?: string
+  Completed?: boolean
+}
 
 const ActivitiesPage: React.FC<PageProps> = ({ location }) => {
+  const { settings, loaded } = useSettings()
   const [activeFilter, setActiveFilter] = React.useState<"all" | Activity["type"]>("all")
+  const [activities, setActivities] = React.useState<Activity[]>(mockActivities)
+  const [apiLoading, setApiLoading] = React.useState(false)
+  const [apiError, setApiError] = React.useState<string | null>(null)
+  const [dataSource, setDataSource] = React.useState<"mock" | "airtable">("mock")
 
-  const filtered = activeFilter === "all" ? mockActivities : mockActivities.filter((a) => a.type === activeFilter)
+  React.useEffect(() => {
+    if (!loaded) return
+    if (settings.platform !== "airtable" || !settings.airtable.apiKey || !settings.airtable.baseId) {
+      setActivities(mockActivities)
+      setDataSource("mock")
+      return
+    }
+    setApiLoading(true)
+    setApiError(null)
+    fetchAirtableTable<AirtableActivityFields>(settings.airtable.apiKey, settings.airtable.baseId, settings.airtable.activitiesTable)
+      .then((records) => {
+        const validTypes = new Set(["call", "email", "meeting", "task", "note"])
+        const mapped: Activity[] = records.map((r, i) => {
+          const f = r.fields
+          return {
+            id: i + 1,
+            type: (validTypes.has((f.Type || "").toLowerCase()) ? (f.Type || "").toLowerCase() : "task") as Activity["type"],
+            title: f.Title || "(Tanpa Judul)",
+            description: f.Description || "",
+            contact: f.Contact || "-",
+            company: f.Company || "-",
+            date: f.Date ? new Date(f.Date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-",
+            time: f.Time || "",
+            completed: !!f.Completed,
+          }
+        })
+        setActivities(mapped)
+        setDataSource("airtable")
+      })
+      .catch((err) => {
+        setApiError(err.message || "Gagal mengambil data dari Airtable.")
+        setActivities(mockActivities)
+        setDataSource("mock")
+      })
+      .finally(() => setApiLoading(false))
+  }, [loaded, settings])
+
+  const today = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+  const upcomingTasks = activities.filter((a) => !a.completed)
+  const todayActivities = activities.filter((a) => a.date === today)
+
+  const filtered = activeFilter === "all" ? activities : activities.filter((a) => a.type === activeFilter)
 
   return (
     <Layout currentPath={location.pathname} title="Activities">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24 }}>
+      {/* Error banner */}
+      {apiError && (
+        <Box sx={{ p: "12px 16px", bg: "dangerLight", border: "1px solid #FECACA", borderRadius: "md", mb: 4, fontSize: 2, color: "dangerDark" }}>
+          ⚠️ {apiError} —{" "}
+          <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+            Periksa konfigurasi
+          </Link>
+        </Box>
+      )}
+      {apiLoading && <Box sx={{ p: "12px 16px", bg: "primaryLight", border: "1px solid", borderColor: "primaryMid", borderRadius: "md", mb: 4, fontSize: 2, color: "primaryDark" }}>⏳ Mengambil data dari Airtable...</Box>}
+      {!apiLoading && (
+        <Flex sx={{ alignItems: "center", gap: 2, mb: 4 }}>
+          <Box sx={{ width: "8px", height: "8px", borderRadius: "circle", bg: dataSource === "airtable" ? "success" : "subtle" }} />
+          <Text sx={{ fontSize: 1, color: "muted" }}>
+            {dataSource === "airtable" ? `Data live dari Airtable · ${activities.length} aktivitas` : "Menampilkan data demo · "}
+            {dataSource === "mock" && (
+              <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+                Hubungkan Airtable →
+              </Link>
+            )}
+          </Text>
+        </Flex>
+      )}
+
+      <Grid sx={{ gridTemplateColumns: "1fr 300px", gap: 6 }}>
         {/* Main timeline */}
-        <div>
+        <Box>
           {/* Filter tabs */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-            <button
+          <Flex sx={{ gap: 2, mb: 6, flexWrap: "wrap" }}>
+            <Button
               onClick={() => setActiveFilter("all")}
-              style={{
-                padding: "7px 16px",
-                borderRadius: 8,
+              sx={{
+                p: "7px 16px",
+                borderRadius: "md",
                 border: "1px solid",
-                borderColor: activeFilter === "all" ? "#2563EB" : "#E2E8F0",
-                backgroundColor: activeFilter === "all" ? "#2563EB" : "#FFFFFF",
-                color: activeFilter === "all" ? "#FFFFFF" : "#64748B",
-                fontSize: 13,
-                fontWeight: 600,
+                borderColor: activeFilter === "all" ? "primary" : "border",
+                bg: activeFilter === "all" ? "primary" : "white",
+                color: activeFilter === "all" ? "white" : "muted",
+                fontSize: 2,
+                fontWeight: "semibold",
                 cursor: "pointer",
               }}
             >
               Semua
-            </button>
+            </Button>
             {(Object.entries(typeConfig) as [Activity["type"], (typeof typeConfig)[Activity["type"]]][]).map(([key, cfg]) => (
-              <button
+              <Button
                 key={key}
                 onClick={() => setActiveFilter(key)}
-                style={{
-                  padding: "7px 16px",
-                  borderRadius: 8,
+                sx={{
+                  p: "7px 16px",
+                  borderRadius: "md",
                   border: "1px solid",
-                  borderColor: activeFilter === key ? cfg.color : "#E2E8F0",
-                  backgroundColor: activeFilter === key ? cfg.bg : "#FFFFFF",
-                  color: activeFilter === key ? cfg.color : "#64748B",
-                  fontSize: 13,
-                  fontWeight: 600,
+                  borderColor: activeFilter === key ? cfg.color : "border",
+                  bg: activeFilter === key ? cfg.bg : "white",
+                  color: activeFilter === key ? cfg.color : "muted",
+                  fontSize: 2,
+                  fontWeight: "semibold",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: 2,
                 }}
               >
                 <span>{cfg.icon}</span>
                 {cfg.label}
-              </button>
+              </Button>
             ))}
-          </div>
+          </Flex>
 
           {/* Activity timeline */}
-          <div style={{ position: "relative" }}>
+          <Box sx={{ position: "relative" }}>
             {/* Vertical line */}
-            <div
-              style={{
-                position: "absolute",
-                left: 19,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                backgroundColor: "#E2E8F0",
-                zIndex: 0,
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {filtered.map((activity, i) => {
+            <Box sx={{ position: "absolute", left: "19px", top: 0, bottom: 0, width: "2px", bg: "border", zIndex: 0 }} />
+            <Flex sx={{ flexDirection: "column", gap: 1 }}>
+              {filtered.map((activity) => {
                 const cfg = typeConfig[activity.type]
                 return (
-                  <div key={activity.id} style={{ display: "flex", gap: 16, position: "relative", zIndex: 1 }}>
+                  <Flex key={activity.id} sx={{ gap: 4, position: "relative", zIndex: 1 }}>
                     {/* Timeline dot */}
-                    <div
-                      style={{
+                    <Flex
+                      sx={{
                         width: 40,
                         height: 40,
-                        borderRadius: "50%",
-                        backgroundColor: activity.completed ? cfg.bg : "#FFFFFF",
+                        borderRadius: "circle",
+                        bg: activity.completed ? cfg.bg : "white",
                         border: `2px solid ${activity.completed ? cfg.color : "#E2E8F0"}`,
-                        display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: 18,
+                        fontSize: 5,
                         flexShrink: 0,
                         zIndex: 1,
                       }}
                     >
                       {cfg.icon}
-                    </div>
+                    </Flex>
 
                     {/* Card */}
-                    <div
-                      style={{
+                    <Box
+                      sx={{
                         flex: 1,
-                        backgroundColor: "#FFFFFF",
-                        borderRadius: 10,
-                        padding: "16px 20px",
-                        border: `1px solid ${activity.completed ? "#E2E8F0" : "#BFDBFE"}`,
-                        marginBottom: 12,
+                        bg: "white",
+                        borderRadius: "lg",
+                        p: "16px 20px",
+                        border: "1px solid",
+                        borderColor: activity.completed ? "border" : "primaryMid",
+                        mb: 3,
                         opacity: activity.completed ? 0.85 : 1,
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span
-                            style={{
-                              backgroundColor: cfg.bg,
-                              color: cfg.color,
-                              padding: "2px 10px",
-                              borderRadius: 20,
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
+                      <Flex sx={{ justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
+                        <Flex sx={{ alignItems: "center", gap: 2 }}>
+                          <Box as="span" sx={{ bg: cfg.bg, color: cfg.color, p: "2px 10px", borderRadius: "pill", fontSize: 0, fontWeight: "bold" }}>
                             {cfg.label}
-                          </span>
+                          </Box>
                           {activity.completed ? (
-                            <span style={{ fontSize: 11, color: "#10B981", fontWeight: 600, backgroundColor: "#ECFDF5", padding: "2px 8px", borderRadius: 20 }}>Selesai</span>
+                            <Box as="span" sx={{ fontSize: 0, color: "success", fontWeight: "semibold", bg: "successLight", p: "2px 8px", borderRadius: "pill" }}>
+                              Selesai
+                            </Box>
                           ) : (
-                            <span style={{ fontSize: 11, color: "#F59E0B", fontWeight: 600, backgroundColor: "#FFFBEB", padding: "2px 8px", borderRadius: 20 }}>Pending</span>
+                            <Box as="span" sx={{ fontSize: 0, color: "warning", fontWeight: "semibold", bg: "warningLight", p: "2px 8px", borderRadius: "pill" }}>
+                              Pending
+                            </Box>
                           )}
-                        </div>
-                        <span style={{ fontSize: 12, color: "#94A3B8" }}>
+                        </Flex>
+                        <Text sx={{ fontSize: 1, color: "subtle" }}>
                           {activity.date} • {activity.time}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1E293B", marginBottom: 4 }}>{activity.title}</div>
-                      <div style={{ fontSize: 13, color: "#64748B", marginBottom: 10, lineHeight: 1.5 }}>{activity.description}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <div
-                          style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: "50%",
-                            backgroundColor: "#DBEAFE",
-                            color: "#2563EB",
-                            fontSize: 9,
-                            fontWeight: 700,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
+                        </Text>
+                      </Flex>
+                      <Text sx={{ fontSize: 3, fontWeight: "bold", color: "text", display: "block", mb: 1 }}>{activity.title}</Text>
+                      <Text sx={{ fontSize: 2, color: "muted", display: "block", mb: 2, lineHeight: "body" }}>{activity.description}</Text>
+                      <Flex sx={{ alignItems: "center", gap: 2 }}>
+                        <Flex sx={{ width: 24, height: 24, borderRadius: "circle", bg: "primaryMid", color: "primary", fontSize: "9px", fontWeight: "bold", alignItems: "center", justifyContent: "center" }}>
                           {activity.contact
                             .split(" ")
                             .map((w) => w[0])
                             .join("")
                             .slice(0, 2)}
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "#1E293B" }}>{activity.contact}</span>
-                        <span style={{ fontSize: 12, color: "#94A3B8" }}>—</span>
-                        <span style={{ fontSize: 12, color: "#64748B" }}>{activity.company}</span>
-                      </div>
-                    </div>
-                  </div>
+                        </Flex>
+                        <Text as="span" sx={{ fontSize: 1, fontWeight: "semibold", color: "text" }}>
+                          {activity.contact}
+                        </Text>
+                        <Text as="span" sx={{ fontSize: 1, color: "subtle" }}>
+                          —
+                        </Text>
+                        <Text as="span" sx={{ fontSize: 1, color: "muted" }}>
+                          {activity.company}
+                        </Text>
+                      </Flex>
+                    </Box>
+                  </Flex>
                 )
               })}
-            </div>
-          </div>
-        </div>
+            </Flex>
+          </Box>
+        </Box>
 
         {/* Right sidebar */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <Flex sx={{ flexDirection: "column", gap: 5 }}>
           {/* Quick add */}
-          <div style={{ backgroundColor: "#FFFFFF", borderRadius: 12, padding: 20, border: "1px solid #E2E8F0" }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1E293B", margin: "0 0 14px 0" }}>Tambah Aktivitas</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {(Object.entries(typeConfig) as [string, (typeof typeConfig)[Activity["type"]]][]).map(([key, cfg]) => (
-                <button
+          <Box sx={{ bg: "white", borderRadius: "xl", p: 5, border: "1px solid", borderColor: "border" }}>
+            <Text as="h3" sx={{ fontSize: 3, fontWeight: "bold", color: "text", m: "0 0 14px 0" }}>
+              Tambah Aktivitas
+            </Text>
+            <Grid sx={{ gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+              {Object.entries(typeConfig).map(([key, cfg]) => (
+                <Button
                   key={key}
-                  style={{
-                    padding: "10px 8px",
-                    borderRadius: 8,
-                    border: `1px solid ${cfg.color}33`,
-                    backgroundColor: cfg.bg,
+                  sx={{
+                    p: "10px 8px",
+                    borderRadius: "md",
+                    border: "1px solid",
+                    borderColor: `${cfg.color}33`,
+                    bg: cfg.bg,
                     color: cfg.color,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    fontSize: 1,
+                    fontWeight: "semibold",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
+                    gap: 2,
                   }}
                 >
                   <span>{cfg.icon}</span>
                   {cfg.label}
-                </button>
+                </Button>
               ))}
-            </div>
-          </div>
+            </Grid>
+          </Box>
 
           {/* Upcoming tasks */}
-          <div style={{ backgroundColor: "#FFFFFF", borderRadius: 12, padding: 20, border: "1px solid #E2E8F0" }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1E293B", margin: "0 0 14px 0" }}>
+          <Box sx={{ bg: "white", borderRadius: "xl", p: 5, border: "1px solid", borderColor: "border" }}>
+            <Flex as="h3" sx={{ fontSize: 3, fontWeight: "bold", color: "text", m: "0 0 14px 0", alignItems: "center", gap: 2 }}>
               Tugas Pending
-              <span style={{ marginLeft: 8, backgroundColor: "#EFF6FF", color: "#2563EB", padding: "2px 8px", borderRadius: 20, fontSize: 11 }}>{upcomingTasks.length}</span>
-            </h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Box as="span" sx={{ bg: "primaryLight", color: "primary", p: "2px 8px", borderRadius: "pill", fontSize: 0 }}>
+                {upcomingTasks.length}
+              </Box>
+            </Flex>
+            <Flex sx={{ flexDirection: "column", gap: 2 }}>
               {upcomingTasks.map((task) => {
                 const cfg = typeConfig[task.type]
                 return (
-                  <div
-                    key={task.id}
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      padding: "10px 12px",
-                      backgroundColor: "#F8FAFC",
-                      borderRadius: 8,
-                      border: "1px solid #E2E8F0",
-                    }}
-                  >
+                  <Flex key={task.id} sx={{ gap: 2, p: "10px 12px", bg: "surface", borderRadius: "md", border: "1px solid", borderColor: "border" }}>
                     <span style={{ fontSize: 16 }}>{cfg.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "#1E293B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
-                      <div style={{ fontSize: 11, color: "#94A3B8" }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Text sx={{ fontSize: 1, fontWeight: "bold", color: "text", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</Text>
+                      <Text sx={{ fontSize: 0, color: "subtle" }}>
                         {task.date} • {task.time}
-                      </div>
-                    </div>
-                  </div>
+                      </Text>
+                    </Box>
+                  </Flex>
                 )
               })}
-            </div>
-          </div>
+            </Flex>
+          </Box>
 
           {/* Today summary */}
-          <div style={{ backgroundColor: "#1E3A8A", borderRadius: 12, padding: 20, color: "#FFFFFF" }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 14px 0", color: "#BFDBFE" }}>Hari Ini</h3>
-            <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 4 }}>{todayActivities.length}</div>
-            <div style={{ fontSize: 13, color: "#93C5FD", marginBottom: 16 }}>Aktivitas terjadwal</div>
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 14 }}>
+          <Box sx={{ bg: "sidebar", borderRadius: "xl", p: 5, color: "white" }}>
+            <Text as="h3" sx={{ fontSize: 3, fontWeight: "bold", m: "0 0 14px 0", color: "sidebarText" }}>
+              Hari Ini
+            </Text>
+            <Text sx={{ fontSize: 10, fontWeight: "extrabold", display: "block", mb: 1 }}>{todayActivities.length}</Text>
+            <Text sx={{ fontSize: 2, color: "#93C5FD", display: "block", mb: 4 }}>Aktivitas terjadwal</Text>
+            <Box sx={{ borderTop: "1px solid rgba(255,255,255,0.1)", pt: 4 }}>
               {todayActivities.map((a) => (
-                <div key={a.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <Flex key={a.id} sx={{ gap: 2, alignItems: "center", mb: 2 }}>
                   <span>{typeConfig[a.type].icon}</span>
-                  <span style={{ fontSize: 12, color: "#BFDBFE", flex: 1 }}>{a.time}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>{a.title}</span>
-                </div>
+                  <Text as="span" sx={{ fontSize: 1, color: "sidebarText", flex: 1 }}>
+                    {a.time}
+                  </Text>
+                  <Text as="span" sx={{ fontSize: 1, fontWeight: "semibold", color: "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                    {a.title}
+                  </Text>
+                </Flex>
               ))}
-            </div>
-          </div>
-        </div>
-      </div>
+            </Box>
+          </Box>
+        </Flex>
+      </Grid>
     </Layout>
   )
 }
 
 export default ActivitiesPage
 
-export const Head: HeadFC = () => <title>Activities | NexusCRM</title>
+export const Head: HeadFC = () => <title>Activities | nateeCRM</title>

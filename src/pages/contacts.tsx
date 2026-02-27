@@ -1,6 +1,18 @@
+import { Box, Flex, Grid, Text, Input, Button } from "theme-ui"
 import * as React from "react"
+import { Link } from "gatsby"
 import type { HeadFC, PageProps } from "gatsby"
 import Layout from "../components/Layout"
+import { useSettings, fetchAirtableTable } from "../hooks/useSettings"
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+}
 
 interface Contact {
   id: number
@@ -31,191 +43,256 @@ const statusConfig: Record<string, { bg: string; color: string; label: string }>
   Inactive: { bg: "#F1F5F9", color: "#64748B", label: "Tidak Aktif" },
 }
 
+interface AirtableContactFields {
+  Name?: string
+  Email?: string
+  Phone?: string
+  Company?: string
+  Position?: string
+  Status?: string
+  LastContact?: string
+}
+
 const ContactsPage: React.FC<PageProps> = ({ location }) => {
+  const { settings, loaded } = useSettings()
   const [search, setSearch] = React.useState("")
   const [filterStatus, setFilterStatus] = React.useState<string>("All")
+  const [contacts, setContacts] = React.useState<Contact[]>(mockContacts)
+  const [apiLoading, setApiLoading] = React.useState(false)
+  const [apiError, setApiError] = React.useState<string | null>(null)
+  const [dataSource, setDataSource] = React.useState<"mock" | "airtable">("mock")
 
-  const filtered = mockContacts.filter((c) => {
+  React.useEffect(() => {
+    if (!loaded) return
+    if (settings.platform !== "airtable" || !settings.airtable.apiKey || !settings.airtable.baseId) {
+      setContacts(mockContacts)
+      setDataSource("mock")
+      return
+    }
+    setApiLoading(true)
+    setApiError(null)
+    fetchAirtableTable<AirtableContactFields>(settings.airtable.apiKey, settings.airtable.baseId, settings.airtable.contactsTable)
+      .then((records) => {
+        const mapped: Contact[] = records.map((r, i) => {
+          const f = r.fields
+          const name = f.Name || "(Tanpa Nama)"
+          const initials = getInitials(name)
+          return {
+            id: i + 1,
+            name,
+            email: f.Email || "-",
+            phone: f.Phone || "-",
+            company: f.Company || "-",
+            position: f.Position || "-",
+            status: (["Active", "Lead", "Inactive"].includes(f.Status || "") ? f.Status : "Active") as Contact["status"],
+            lastContact: f.LastContact ? new Date(f.LastContact).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-",
+            avatar: initials,
+          }
+        })
+        setContacts(mapped)
+        setDataSource("airtable")
+      })
+      .catch((err) => {
+        setApiError(err.message || "Gagal mengambil data dari Airtable.")
+        setContacts(mockContacts)
+        setDataSource("mock")
+      })
+      .finally(() => setApiLoading(false))
+  }, [loaded, settings])
+
+  const filtered = contacts.filter((c) => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.company.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase())
     const matchStatus = filterStatus === "All" || c.status === filterStatus
     return matchSearch && matchStatus
   })
 
-  const cardStyle: React.CSSProperties = {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    border: "1px solid #E2E8F0",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-    overflow: "hidden",
-  }
-
-  const inputStyle: React.CSSProperties = {
-    border: "1px solid #E2E8F0",
-    borderRadius: 8,
-    padding: "8px 16px",
-    fontSize: 14,
-    color: "#1E293B",
-    outline: "none",
-    width: 260,
-    backgroundColor: "#FFFFFF",
-  }
-
   return (
     <Layout currentPath={location.pathname} title="Contacts">
+      {/* Error banner */}
+      {apiError && (
+        <Box sx={{ p: "12px 16px", bg: "dangerLight", border: "1px solid #FECACA", borderRadius: "md", mb: 4, fontSize: 2, color: "dangerDark", display: "flex", alignItems: "center", gap: 2 }}>
+          ⚠️ {apiError} —{" "}
+          <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+            Periksa konfigurasi
+          </Link>
+        </Box>
+      )}
+      {/* Loading banner */}
+      {apiLoading && (
+        <Box sx={{ p: "12px 16px", bg: "primaryLight", border: "1px solid", borderColor: "primaryMid", borderRadius: "md", mb: 4, fontSize: 2, color: "primaryDark", display: "flex", alignItems: "center", gap: 2 }}>
+          ⏳ Mengambil data dari Airtable...
+        </Box>
+      )}
+      {/* Data source indicator */}
+      {!apiLoading && (
+        <Flex sx={{ alignItems: "center", gap: 2, mb: 4 }}>
+          <Box sx={{ width: "8px", height: "8px", borderRadius: "circle", bg: dataSource === "airtable" ? "success" : "subtle" }} />
+          <Text sx={{ fontSize: 1, color: "muted" }}>
+            {dataSource === "airtable" ? `Data live dari Airtable · ${contacts.length} kontak` : "Menampilkan data demo · "}
+            {dataSource === "mock" && (
+              <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+                Hubungkan Airtable →
+              </Link>
+            )}
+          </Text>
+        </Flex>
+      )}
+
       {/* Header bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <input placeholder="Cari kontak..." value={search} onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
-          <div style={{ display: "flex", gap: 8 }}>
+      <Flex sx={{ justifyContent: "space-between", alignItems: "center", mb: 6 }}>
+        <Flex sx={{ gap: 3, alignItems: "center" }}>
+          <Input
+            placeholder="Cari kontak..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ border: "1px solid", borderColor: "border", borderRadius: "md", p: "8px 16px", fontSize: 3, color: "text", width: 260, bg: "white" }}
+          />
+          <Flex sx={{ gap: 2 }}>
             {["All", "Active", "Lead", "Inactive"].map((s) => (
-              <button
+              <Button
                 key={s}
                 onClick={() => setFilterStatus(s)}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 8,
+                sx={{
+                  p: "8px 16px",
+                  borderRadius: "md",
                   border: "1px solid",
-                  borderColor: filterStatus === s ? "#2563EB" : "#E2E8F0",
-                  backgroundColor: filterStatus === s ? "#EFF6FF" : "#FFFFFF",
-                  color: filterStatus === s ? "#2563EB" : "#64748B",
-                  fontSize: 13,
-                  fontWeight: 600,
+                  borderColor: filterStatus === s ? "primary" : "border",
+                  bg: filterStatus === s ? "primaryLight" : "white",
+                  color: filterStatus === s ? "primary" : "muted",
+                  fontSize: 2,
+                  fontWeight: "semibold",
                   cursor: "pointer",
                 }}
               >
                 {s === "All" ? "Semua" : statusConfig[s]?.label || s}
-              </button>
+              </Button>
             ))}
-          </div>
-        </div>
-        <button
-          style={{
-            backgroundColor: "#2563EB",
-            color: "#FFFFFF",
+          </Flex>
+        </Flex>
+        <Button
+          sx={{
+            bg: "primary",
+            color: "white",
             border: "none",
-            borderRadius: 8,
-            padding: "10px 20px",
-            fontSize: 14,
-            fontWeight: 600,
+            borderRadius: "md",
+            p: "10px 20px",
+            fontSize: 3,
+            fontWeight: "semibold",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 2,
           }}
         >
           + Tambah Kontak
-        </button>
-      </div>
+        </Button>
+      </Flex>
 
       {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+      <Grid sx={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4, mb: 6 }}>
         {[
-          { label: "Total Kontak", value: mockContacts.length, color: "#2563EB", bg: "#EFF6FF" },
-          { label: "Kontak Aktif", value: mockContacts.filter((c) => c.status === "Active").length, color: "#10B981", bg: "#ECFDF5" },
-          { label: "Lead Baru", value: mockContacts.filter((c) => c.status === "Lead").length, color: "#8B5CF6", bg: "#F5F3FF" },
+          { label: "Total Kontak", value: contacts.length, color: "#2563EB", bg: "#EFF6FF" },
+          { label: "Kontak Aktif", value: contacts.filter((c) => c.status === "Active").length, color: "#10B981", bg: "#ECFDF5" },
+          { label: "Lead Baru", value: contacts.filter((c) => c.status === "Lead").length, color: "#8B5CF6", bg: "#F5F3FF" },
         ].map((stat) => (
-          <div
-            key={stat.label}
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: 10,
-              padding: "20px 24px",
-              border: "1px solid #E2E8F0",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-            }}
-          >
-            <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: stat.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: 22, fontWeight: 800, color: stat.color }}>{stat.value}</span>
-            </div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748B" }}>{stat.label}</span>
-          </div>
+          <Flex key={stat.label} sx={{ bg: "white", borderRadius: "lg", p: "20px 24px", border: "1px solid", borderColor: "border", alignItems: "center", gap: 4 }}>
+            <Flex sx={{ width: 44, height: 44, borderRadius: "xl", backgroundColor: stat.bg, alignItems: "center", justifyContent: "center" }}>
+              <Text sx={{ fontSize: 5, fontWeight: "extrabold", color: stat.color }}>{stat.value}</Text>
+            </Flex>
+            <Text sx={{ fontSize: 3, fontWeight: "semibold", color: "muted" }}>{stat.label}</Text>
+          </Flex>
         ))}
-      </div>
+      </Grid>
 
       {/* Table */}
-      <div style={cardStyle}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#F8FAFC" }}>
+      <Box sx={{ bg: "white", borderRadius: "xl", border: "1px solid", borderColor: "border", overflow: "hidden" }}>
+        <Box sx={{ overflowX: "auto" }}>
+          <Box as="table" sx={{ width: "100%", borderCollapse: "collapse" }}>
+            <Box as="thead">
+              <Box as="tr" sx={{ bg: "surface" }}>
                 {["Kontak", "Perusahaan", "No. Telepon", "Status", "Kontak Terakhir", "Aksi"].map((h) => (
-                  <th
+                  <Box
+                    as="th"
                     key={h}
-                    style={{
+                    sx={{
                       textAlign: "left",
-                      padding: "14px 20px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#64748B",
+                      p: "14px 20px",
+                      fontSize: 0,
+                      fontWeight: "bold",
+                      color: "muted",
                       textTransform: "uppercase",
                       letterSpacing: "0.5px",
-                      borderBottom: "1px solid #E2E8F0",
+                      borderBottom: "1px solid",
+                      borderColor: "border",
                     }}
                   >
                     {h}
-                  </th>
+                  </Box>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </Box>
+            </Box>
+            <Box as="tbody">
               {filtered.map((contact, i) => {
                 const sc = statusConfig[contact.status]
                 return (
-                  <tr key={contact.id} style={{ backgroundColor: i % 2 === 0 ? "#FFFFFF" : "#FAFBFF" }}>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div
-                          style={{
+                  <Box as="tr" key={contact.id} sx={{ bg: i % 2 === 0 ? "white" : "#FAFBFF" }}>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Flex sx={{ alignItems: "center", gap: 3 }}>
+                        <Flex
+                          sx={{
                             width: 38,
                             height: 38,
-                            borderRadius: "50%",
-                            backgroundColor: "#DBEAFE",
-                            color: "#2563EB",
-                            display: "flex",
+                            borderRadius: "circle",
+                            bg: "primaryMid",
+                            color: "primary",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontSize: 13,
-                            fontWeight: 700,
+                            fontSize: 2,
+                            fontWeight: "bold",
                             flexShrink: 0,
                           }}
                         >
                           {contact.avatar}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: "#1E293B" }}>{contact.name}</div>
-                          <div style={{ fontSize: 12, color: "#64748B" }}>{contact.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>{contact.company}</div>
-                      <div style={{ fontSize: 12, color: "#64748B" }}>{contact.position}</div>
-                    </td>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 13, color: "#64748B" }}>{contact.phone}</td>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ backgroundColor: sc.bg, color: sc.color, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{sc.label}</span>
-                    </td>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 13, color: "#64748B" }}>{contact.lastContact}</td>
-                    <td style={{ padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button style={{ padding: "6px 12px", fontSize: 12, borderRadius: 6, border: "1px solid #DBEAFE", backgroundColor: "#EFF6FF", color: "#2563EB", cursor: "pointer", fontWeight: 600 }}>Edit</button>
-                        <button style={{ padding: "6px 12px", fontSize: 12, borderRadius: 6, border: "1px solid #FEE2E2", backgroundColor: "#FEF2F2", color: "#EF4444", cursor: "pointer", fontWeight: 600 }}>Hapus</button>
-                      </div>
-                    </td>
-                  </tr>
+                        </Flex>
+                        <Box>
+                          <Text sx={{ fontWeight: "bold", fontSize: 3, color: "text", display: "block" }}>{contact.name}</Text>
+                          <Text sx={{ fontSize: 1, color: "muted" }}>{contact.email}</Text>
+                        </Box>
+                      </Flex>
+                    </Box>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Text sx={{ fontSize: 2, fontWeight: "semibold", color: "text", display: "block" }}>{contact.company}</Text>
+                      <Text sx={{ fontSize: 1, color: "muted" }}>{contact.position}</Text>
+                    </Box>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontSize: 2, color: "muted" }}>
+                      {contact.phone}
+                    </Box>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Box as="span" sx={{ backgroundColor: sc.bg, color: sc.color, p: "3px 12px", borderRadius: "pill", fontSize: 1, fontWeight: "semibold" }}>
+                        {sc.label}
+                      </Box>
+                    </Box>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontSize: 2, color: "muted" }}>
+                      {contact.lastContact}
+                    </Box>
+                    <Box as="td" sx={{ p: "16px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Flex sx={{ gap: 2 }}>
+                        <Button sx={{ p: "6px 12px", fontSize: 1, borderRadius: "sm", border: "1px solid", borderColor: "primaryMid", bg: "primaryLight", color: "primary", cursor: "pointer", fontWeight: "semibold" }}>Edit</Button>
+                        <Button sx={{ p: "6px 12px", fontSize: 1, borderRadius: "sm", border: "1px solid", borderColor: "#FEE2E2", bg: "dangerLight", color: "danger", cursor: "pointer", fontWeight: "semibold" }}>Hapus</Button>
+                      </Flex>
+                    </Box>
+                  </Box>
                 )
               })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <div style={{ textAlign: "center", padding: "48px 0", color: "#94A3B8", fontSize: 14 }}>Tidak ada kontak yang ditemukan.</div>}
-        </div>
-      </div>
+            </Box>
+          </Box>
+          {filtered.length === 0 && <Box sx={{ textAlign: "center", p: "48px 0", color: "subtle", fontSize: 3 }}>Tidak ada kontak yang ditemukan.</Box>}
+        </Box>
+      </Box>
     </Layout>
   )
 }
 
 export default ContactsPage
 
-export const Head: HeadFC = () => <title>Contacts | NexusCRM</title>
+export const Head: HeadFC = () => <title>Contacts | nateeCRM</title>

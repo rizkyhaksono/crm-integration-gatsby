@@ -1,4 +1,6 @@
-﻿import * as React from "react"
+﻿import { Box, Flex, Grid, Text } from "theme-ui"
+import * as React from "react"
+import { Link } from "gatsby"
 import type { HeadFC, PageProps } from "gatsby"
 import Layout from "../components/Layout"
 
@@ -32,119 +34,168 @@ const statusBadge = (status: string) => {
     Inactive: { bg: "#F1F5F9", color: "#64748B" },
   }
   const s = map[status] || map["Inactive"]
-  return <span style={{ backgroundColor: s.bg, color: s.color, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{status}</span>
+  return (
+    <Box
+      as="span"
+      sx={{
+        backgroundColor: s.bg,
+        color: s.color,
+        p: "2px 10px",
+        borderRadius: "pill",
+        fontSize: 0,
+        fontWeight: "semibold",
+      }}
+    >
+      {status}
+    </Box>
+  )
 }
 
 const IndexPage: React.FC<PageProps> = ({ location }) => {
-  const cardStyle: React.CSSProperties = {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: "24px",
-    border: "1px solid #E2E8F0",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-  }
-
-  const sectionTitleStyle: React.CSSProperties = {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#1E293B",
-    margin: "0 0 20px 0",
-  }
-
   return (
     <Layout currentPath={location.pathname} title="Dashboard">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20, marginBottom: 28 }}>
+      {/* Stat cards */}
+      <Grid sx={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 5, mb: 7 }}>
         {statCards.map((card) => (
-          <div key={card.label} style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px" }}>{card.label}</span>
-              <div style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: card.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{card.icon}</div>
-            </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#1E293B", marginBottom: 8 }}>{card.value}</div>
-            <div style={{ fontSize: 13, color: card.trend === "up" ? "#10B981" : "#EF4444" }}>
-              {card.trend === "up" ? "" : ""} {card.change} dari bulan lalu
-            </div>
-          </div>
+          <Box
+            key={card.label}
+            sx={{
+              bg: "white",
+              borderRadius: "xl",
+              p: 6,
+              border: "1px solid",
+              borderColor: "border",
+              boxShadow: "card",
+            }}
+          >
+            <Flex sx={{ alignItems: "center", justifyContent: "space-between", mb: 4 }}>
+              <Text sx={{ fontSize: 0, fontWeight: "semibold", color: "muted", textTransform: "uppercase", letterSpacing: "0.5px" }}>{card.label}</Text>
+              <Flex
+                sx={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: "lg",
+                  backgroundColor: card.bg,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 6,
+                }}
+              >
+                {card.icon}
+              </Flex>
+            </Flex>
+            <Text sx={{ fontSize: 9, fontWeight: "extrabold", color: "text", mb: 2, display: "block" }}>{card.value}</Text>
+            <Text sx={{ fontSize: 2, color: card.trend === "up" ? "success" : "danger" }}>
+              {card.trend === "up" ? "▲" : "▼"} {card.change} dari bulan lalu
+            </Text>
+          </Box>
         ))}
-      </div>
+      </Grid>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-        <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <h2 style={sectionTitleStyle}>Kontak Terbaru</h2>
-            <a href="/contacts/" style={{ fontSize: 13, color: "#2563EB", textDecoration: "none", fontWeight: 600 }}>
-              Lihat semua{" "}
-            </a>
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
+      {/* Bottom two-column grid */}
+      <Grid sx={{ gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {/* Recent contacts */}
+        <Box sx={{ bg: "white", borderRadius: "xl", p: 6, border: "1px solid", borderColor: "border", boxShadow: "card" }}>
+          <Flex sx={{ justifyContent: "space-between", alignItems: "center", mb: 5 }}>
+            <Text sx={{ fontSize: 5, fontWeight: "bold", color: "text" }}>Kontak Terbaru</Text>
+            <Link to="/contacts/" sx={{ fontSize: 2, color: "primary", textDecoration: "none", fontWeight: "semibold" }}>
+              Lihat semua →
+            </Link>
+          </Flex>
+          <Box as="table" sx={{ width: "100%", borderCollapse: "collapse" }}>
+            <Box as="thead">
+              <Box as="tr">
                 {["Nama", "Perusahaan", "Status", "Tanggal"].map((h) => (
-                  <th key={h} style={{ textAlign: "left", fontSize: 11, fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", paddingBottom: 12, borderBottom: "1px solid #E2E8F0" }}>
+                  <Box
+                    as="th"
+                    key={h}
+                    sx={{
+                      textAlign: "left",
+                      fontSize: 0,
+                      fontWeight: "semibold",
+                      color: "muted",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                      pb: 3,
+                      borderBottom: "1px solid",
+                      borderColor: "border",
+                    }}
+                  >
                     {h}
-                  </th>
+                  </Box>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentContacts.map((c, i) => (
-                <tr key={i}>
-                  <td style={{ padding: "12px 0", borderBottom: "1px solid #E2E8F0" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "#1E293B" }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: "#64748B" }}>{c.email}</div>
-                  </td>
-                  <td style={{ padding: "12px 12px 12px 0", borderBottom: "1px solid #E2E8F0", fontSize: 13, color: "#64748B" }}>{c.company}</td>
-                  <td style={{ padding: "12px 12px 12px 0", borderBottom: "1px solid #E2E8F0" }}>{statusBadge(c.status)}</td>
-                  <td style={{ padding: "12px 0", borderBottom: "1px solid #E2E8F0", fontSize: 12, color: "#64748B" }}>{c.date}</td>
-                </tr>
+              </Box>
+            </Box>
+            <Box as="tbody">
+              {recentContacts.map((c) => (
+                <Box as="tr" key={c.name}>
+                  <Box as="td" sx={{ p: "12px 0", borderBottom: "1px solid", borderColor: "border" }}>
+                    <Text sx={{ fontWeight: "semibold", fontSize: 2, color: "text", display: "block" }}>{c.name}</Text>
+                    <Text sx={{ fontSize: 0, color: "muted" }}>{c.email}</Text>
+                  </Box>
+                  <Box as="td" sx={{ p: "12px 12px 12px 0", borderBottom: "1px solid", borderColor: "border", fontSize: 2, color: "muted" }}>
+                    {c.company}
+                  </Box>
+                  <Box as="td" sx={{ p: "12px 12px 12px 0", borderBottom: "1px solid", borderColor: "border" }}>
+                    {statusBadge(c.status)}
+                  </Box>
+                  <Box as="td" sx={{ p: "12px 0", borderBottom: "1px solid", borderColor: "border", fontSize: 1, color: "muted" }}>
+                    {c.date}
+                  </Box>
+                </Box>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </Box>
+          </Box>
+        </Box>
 
-        <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <h2 style={sectionTitleStyle}>Pipeline Deals</h2>
-            <a href="/deals/" style={{ fontSize: 13, color: "#2563EB", textDecoration: "none", fontWeight: 600 }}>
-              Lihat semua{" "}
-            </a>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Pipeline deals */}
+        <Box sx={{ bg: "white", borderRadius: "xl", p: 6, border: "1px solid", borderColor: "border", boxShadow: "card" }}>
+          <Flex sx={{ justifyContent: "space-between", alignItems: "center", mb: 5 }}>
+            <Text sx={{ fontSize: 5, fontWeight: "bold", color: "text" }}>Pipeline Deals</Text>
+            <Link to="/deals/" sx={{ fontSize: 2, color: "primary", textDecoration: "none", fontWeight: "semibold" }}>
+              Lihat semua →
+            </Link>
+          </Flex>
+          <Flex sx={{ flexDirection: "column", gap: 4 }}>
             {pipeline.map((p) => {
               const maxCount = Math.max(...pipeline.map((x) => x.count))
               const pct = (p.count / maxCount) * 100
               return (
-                <div key={p.stage}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>{p.stage}</span>
-                    <div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: p.color }}>{p.count}</span>
-                      <span style={{ fontSize: 11, color: "#64748B", marginLeft: 8 }}>{p.value}</span>
-                    </div>
-                  </div>
-                  <div style={{ height: 8, backgroundColor: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${pct}%`, backgroundColor: p.color, borderRadius: 99 }} />
-                  </div>
-                </div>
+                <Box key={p.stage}>
+                  <Flex sx={{ justifyContent: "space-between", mb: 2 }}>
+                    <Text sx={{ fontSize: 2, fontWeight: "semibold", color: "text" }}>{p.stage}</Text>
+                    <Box>
+                      <Text as="span" sx={{ fontSize: 2, fontWeight: "bold", color: p.color }}>
+                        {p.count}
+                      </Text>
+                      <Text as="span" sx={{ fontSize: 0, color: "muted", ml: 2 }}>
+                        {p.value}
+                      </Text>
+                    </Box>
+                  </Flex>
+                  <Box sx={{ height: "8px", bg: "border", borderRadius: "pill", overflow: "hidden" }}>
+                    <Box sx={{ height: "100%", width: `${pct}%`, backgroundColor: p.color, borderRadius: "pill" }} />
+                  </Box>
+                </Box>
               )
             })}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 24, padding: "16px", backgroundColor: "#EFF6FF", borderRadius: 10 }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, marginBottom: 4 }}>TOTAL PIPELINE</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#2563EB" }}>Rp 1.85M</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, marginBottom: 4 }}>WIN RATE</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#10B981" }}>28.4%</div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </Flex>
+          <Grid sx={{ gridTemplateColumns: "1fr 1fr", gap: 3, mt: 6, p: 4, bg: "primaryLight", borderRadius: "lg" }}>
+            <Box>
+              <Text sx={{ fontSize: 0, color: "muted", fontWeight: "semibold", mb: 1, display: "block" }}>TOTAL PIPELINE</Text>
+              <Text sx={{ fontSize: 7, fontWeight: "extrabold", color: "primary" }}>Rp 1.85M</Text>
+            </Box>
+            <Box>
+              <Text sx={{ fontSize: 0, color: "muted", fontWeight: "semibold", mb: 1, display: "block" }}>WIN RATE</Text>
+              <Text sx={{ fontSize: 7, fontWeight: "extrabold", color: "success" }}>28.4%</Text>
+            </Box>
+          </Grid>
+        </Box>
+      </Grid>
     </Layout>
   )
 }
 
 export default IndexPage
 
-export const Head: HeadFC = () => <title>Dashboard | NexusCRM</title>
+export const Head: HeadFC = () => <title>Dashboard | nateeCRM</title>

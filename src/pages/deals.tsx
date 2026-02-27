@@ -1,6 +1,9 @@
+import { Box, Flex, Grid, Text, Button } from "theme-ui"
 import * as React from "react"
+import { Link } from "gatsby"
 import type { HeadFC, PageProps } from "gatsby"
 import Layout from "../components/Layout"
+import { useSettings, fetchAirtableTable } from "../hooks/useSettings"
 
 interface Deal {
   id: number
@@ -26,6 +29,21 @@ const stageConfig: Record<Stage, { bg: string; color: string; border: string }> 
 
 const kanbanStages: Stage[] = ["Lead", "Qualified", "Proposal", "Negotiation", "Closed Won"]
 
+function probBarColor(probability: number): string {
+  if (probability >= 70) return "#10B981"
+  if (probability >= 40) return "#F59E0B"
+  return "#2563EB"
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+}
+
 const mockDeals: Deal[] = [
   { id: 1, title: "Implementasi ERP", company: "PT Maju Bersama", value: "Rp 450M", stage: "Negotiation", owner: "BS", probability: 75, closeDate: "28 Feb 2026" },
   { id: 2, title: "Langganan SaaS Tahunan", company: "CV Berkah Jaya", value: "Rp 120M", stage: "Proposal", owner: "SR", probability: 55, closeDate: "15 Mar 2026" },
@@ -37,228 +55,246 @@ const mockDeals: Deal[] = [
   { id: 8, title: "Upgrade Server", company: "Toko Makmur", value: "Rp 180M", stage: "Negotiation", owner: "DK", probability: 80, closeDate: "05 Mar 2026" },
 ]
 
-const DealsPage: React.FC<PageProps> = ({ location }) => {
-  const [view, setView] = React.useState<"kanban" | "list">("kanban")
+interface AirtableDealFields {
+  Title?: string
+  Company?: string
+  Value?: number | string
+  Stage?: string
+  Owner?: string
+  Probability?: number
+  CloseDate?: string
+}
 
-  const totalValue = "Rp 1.885M"
-  const totalDeals = mockDeals.length
-  const wonDeals = mockDeals.filter((d) => d.stage === "Closed Won").length
+const DealsPage: React.FC<PageProps> = ({ location }) => {
+  const { settings, loaded } = useSettings()
+  const [view, setView] = React.useState<"kanban" | "list">("kanban")
+  const [deals, setDeals] = React.useState<Deal[]>(mockDeals)
+  const [apiLoading, setApiLoading] = React.useState(false)
+  const [apiError, setApiError] = React.useState<string | null>(null)
+  const [dataSource, setDataSource] = React.useState<"mock" | "airtable">("mock")
+
+  React.useEffect(() => {
+    if (!loaded) return
+    if (settings.platform !== "airtable" || !settings.airtable.apiKey || !settings.airtable.baseId) {
+      setDeals(mockDeals)
+      setDataSource("mock")
+      return
+    }
+    setApiLoading(true)
+    setApiError(null)
+    fetchAirtableTable<AirtableDealFields>(settings.airtable.apiKey, settings.airtable.baseId, settings.airtable.dealsTable)
+      .then((records) => {
+        const validStages = new Set<Stage>(["Lead", "Qualified", "Proposal", "Negotiation", "Closed Won", "Closed Lost"])
+        const mapped: Deal[] = records.map((r, i) => {
+          const f = r.fields
+          const valueNum = typeof f.Value === "number" ? f.Value : Number.parseFloat(String(f.Value || "0"))
+          let valueFmt: string
+          if (valueNum >= 1_000_000_000) {
+            valueFmt = `Rp ${(valueNum / 1_000_000_000).toFixed(0)}M`
+          } else if (valueNum >= 1_000_000) {
+            valueFmt = `Rp ${(valueNum / 1_000_000).toFixed(0)}Jt`
+          } else {
+            valueFmt = `Rp ${valueNum.toLocaleString("id-ID")}`
+          }
+          const ownerName = f.Owner || "?"
+          const ownerInitials = getInitials(ownerName)
+          return {
+            id: i + 1,
+            title: f.Title || "(Tanpa Judul)",
+            company: f.Company || "-",
+            value: valueFmt,
+            stage: (validStages.has(f.Stage as Stage) ? f.Stage : "Lead") as Stage,
+            owner: ownerInitials,
+            probability: typeof f.Probability === "number" ? f.Probability : 0,
+            closeDate: f.CloseDate ? new Date(f.CloseDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-",
+          }
+        })
+        setDeals(mapped)
+        setDataSource("airtable")
+      })
+      .catch((err) => {
+        setApiError(err.message || "Gagal mengambil data dari Airtable.")
+        setDeals(mockDeals)
+        setDataSource("mock")
+      })
+      .finally(() => setApiLoading(false))
+  }, [loaded, settings])
+
+  const totalValueNum = deals.reduce((sum, d) => {
+    const match = d.value.replaceAll(/\D/gu, "")
+    return sum + Number.parseInt(match || "0", 10)
+  }, 0)
+  const totalValue = dataSource === "airtable" ? `Rp ${totalValueNum.toLocaleString("id-ID")}` : "Rp 1.885M"
+  const totalDeals = deals.length
+  const wonDeals = deals.filter((d) => d.stage === "Closed Won").length
 
   return (
     <Layout currentPath={location.pathname} title="Deals">
+      {/* Error banner */}
+      {apiError && (
+        <Box sx={{ p: "12px 16px", bg: "dangerLight", border: "1px solid #FECACA", borderRadius: "md", mb: 4, fontSize: 2, color: "dangerDark" }}>
+          ⚠️ {apiError} —{" "}
+          <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+            Periksa konfigurasi
+          </Link>
+        </Box>
+      )}
+      {apiLoading && <Box sx={{ p: "12px 16px", bg: "primaryLight", border: "1px solid", borderColor: "primaryMid", borderRadius: "md", mb: 4, fontSize: 2, color: "primaryDark" }}>⏳ Mengambil data dari Airtable...</Box>}
+      {!apiLoading && (
+        <Flex sx={{ alignItems: "center", gap: 2, mb: 4 }}>
+          <Box sx={{ width: "8px", height: "8px", borderRadius: "circle", bg: dataSource === "airtable" ? "success" : "subtle" }} />
+          <Text sx={{ fontSize: 1, color: "muted" }}>
+            {dataSource === "airtable" ? `Data live dari Airtable · ${deals.length} deals` : "Menampilkan data demo · "}
+            {dataSource === "mock" && (
+              <Link to="/settings/" sx={{ color: "primary", fontWeight: "semibold" }}>
+                Hubungkan Airtable →
+              </Link>
+            )}
+          </Text>
+        </Flex>
+      )}
+
       {/* Top bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div style={{ display: "flex", gap: 8 }}>
+      <Flex sx={{ justifyContent: "space-between", alignItems: "center", mb: 6 }}>
+        <Flex sx={{ gap: 2 }}>
           {(["kanban", "list"] as const).map((v) => (
-            <button
+            <Button
               key={v}
               onClick={() => setView(v)}
-              style={{
-                padding: "8px 20px",
-                borderRadius: 8,
+              sx={{
+                p: "8px 20px",
+                borderRadius: "md",
                 border: "1px solid",
-                borderColor: view === v ? "#2563EB" : "#E2E8F0",
-                backgroundColor: view === v ? "#2563EB" : "#FFFFFF",
-                color: view === v ? "#FFFFFF" : "#64748B",
-                fontSize: 13,
-                fontWeight: 600,
+                borderColor: view === v ? "primary" : "border",
+                bg: view === v ? "primary" : "white",
+                color: view === v ? "white" : "muted",
+                fontSize: 2,
+                fontWeight: "semibold",
                 cursor: "pointer",
-                textTransform: "capitalize",
               }}
             >
               {v === "kanban" ? "Papan Kanban" : "Daftar"}
-            </button>
+            </Button>
           ))}
-        </div>
-        <button
-          style={{
-            backgroundColor: "#2563EB",
-            color: "#FFFFFF",
-            border: "none",
-            borderRadius: 8,
-            padding: "10px 20px",
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          + Tambah Deal
-        </button>
-      </div>
+        </Flex>
+        <Button sx={{ bg: "primary", color: "white", border: "none", borderRadius: "md", p: "10px 20px", fontSize: 3, fontWeight: "semibold", cursor: "pointer" }}>+ Tambah Deal</Button>
+      </Flex>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
+      <Grid sx={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4, mb: 7 }}>
         {[
           { label: "Total Pipeline", value: totalValue, color: "#2563EB", bg: "#EFF6FF" },
           { label: "Total Deals", value: String(totalDeals), color: "#8B5CF6", bg: "#F5F3FF" },
           { label: "Deals Menang", value: String(wonDeals), color: "#10B981", bg: "#ECFDF5" },
         ].map((s) => (
-          <div key={s.label} style={{ backgroundColor: "#FFFFFF", borderRadius: 10, padding: "20px 24px", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: s.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.value}</span>
-            </div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748B" }}>{s.label}</span>
-          </div>
+          <Flex key={s.label} sx={{ bg: "white", borderRadius: "lg", p: "20px 24px", border: "1px solid", borderColor: "border", alignItems: "center", gap: 4 }}>
+            <Flex sx={{ width: 44, height: 44, borderRadius: "xl", backgroundColor: s.bg, alignItems: "center", justifyContent: "center" }}>
+              <Text sx={{ fontSize: 4, fontWeight: "extrabold", color: s.color }}>{s.value}</Text>
+            </Flex>
+            <Text sx={{ fontSize: 3, fontWeight: "semibold", color: "muted" }}>{s.label}</Text>
+          </Flex>
         ))}
-      </div>
+      </Grid>
 
       {view === "kanban" ? (
         /* Kanban view */
-        <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16 }}>
+        <Flex sx={{ gap: 4, overflowX: "auto", pb: 4 }}>
           {kanbanStages.map((stage) => {
-            const stageDeals = mockDeals.filter((d) => d.stage === stage)
+            const stageDeals = deals.filter((d) => d.stage === stage)
             const sc = stageConfig[stage]
             return (
-              <div
-                key={stage}
-                style={{
-                  minWidth: 240,
-                  width: 240,
-                  flexShrink: 0,
-                  backgroundColor: "#F8FAFC",
-                  borderRadius: 12,
-                  padding: 12,
-                  border: "1px solid #E2E8F0",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: sc.color }}>{stage}</span>
-                  <span
-                    style={{
-                      backgroundColor: sc.bg,
-                      color: sc.color,
-                      border: `1px solid ${sc.border}`,
-                      borderRadius: 20,
-                      padding: "1px 8px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
-                  >
+              <Box key={stage} sx={{ minWidth: 240, width: 240, flexShrink: 0, bg: "surface", borderRadius: "xl", p: 3, border: "1px solid", borderColor: "border" }}>
+                <Flex sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+                  <Text sx={{ fontSize: 2, fontWeight: "bold", color: sc.color }}>{stage}</Text>
+                  <Box as="span" sx={{ backgroundColor: sc.bg, color: sc.color, border: `1px solid ${sc.border}`, borderRadius: "pill", p: "1px 8px", fontSize: 0, fontWeight: "bold" }}>
                     {stageDeals.length}
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {stageDeals.map((deal) => (
-                    <div
-                      key={deal.id}
-                      style={{
-                        backgroundColor: "#FFFFFF",
-                        borderRadius: 8,
-                        padding: "14px",
-                        border: "1px solid #E2E8F0",
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B", marginBottom: 4 }}>{deal.title}</div>
-                      <div style={{ fontSize: 11, color: "#64748B", marginBottom: 10 }}>{deal.company}</div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: "#2563EB" }}>{deal.value}</span>
-                        <div
-                          style={{
-                            width: 26,
-                            height: 26,
-                            borderRadius: "50%",
-                            backgroundColor: "#DBEAFE",
-                            color: "#2563EB",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {deal.owner}
-                        </div>
-                      </div>
-                      {/* Probability bar */}
-                      <div style={{ marginTop: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94A3B8", marginBottom: 4 }}>
-                          <span>Probabilitas</span>
-                          <span>{deal.probability}%</span>
-                        </div>
-                        <div style={{ height: 4, backgroundColor: "#E2E8F0", borderRadius: 99 }}>
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${deal.probability}%`,
-                              backgroundColor: deal.probability >= 70 ? "#10B981" : deal.probability >= 40 ? "#F59E0B" : "#2563EB",
-                              borderRadius: 99,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div style={{ marginTop: 8, fontSize: 10, color: "#94A3B8" }}>Tutup: {deal.closeDate}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                  </Box>
+                </Flex>
+                <Flex sx={{ flexDirection: "column", gap: 2 }}>
+                  {stageDeals.map((deal) => {
+                    const probColor = probBarColor(deal.probability)
+                    return (
+                      <Box key={deal.id} sx={{ bg: "white", borderRadius: "md", p: 4, border: "1px solid", borderColor: "border", boxShadow: "sm", cursor: "pointer" }}>
+                        <Text sx={{ fontSize: 2, fontWeight: "bold", color: "text", display: "block", mb: 1 }}>{deal.title}</Text>
+                        <Text sx={{ fontSize: 0, color: "muted", display: "block", mb: 2 }}>{deal.company}</Text>
+                        <Flex sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                          <Text as="span" sx={{ fontSize: 3, fontWeight: "extrabold", color: "primary" }}>
+                            {deal.value}
+                          </Text>
+                          <Flex sx={{ width: 26, height: 26, borderRadius: "circle", bg: "primaryMid", color: "primary", fontSize: "10px", fontWeight: "bold", alignItems: "center", justifyContent: "center" }}>{deal.owner}</Flex>
+                        </Flex>
+                        {/* Probability bar */}
+                        <Box sx={{ mt: 2 }}>
+                          <Flex sx={{ justifyContent: "space-between", fontSize: "10px", color: "subtle", mb: 1 }}>
+                            <span>Probabilitas</span>
+                            <span>{deal.probability}%</span>
+                          </Flex>
+                          <Box sx={{ height: "4px", bg: "border", borderRadius: "pill" }}>
+                            <Box sx={{ height: "100%", width: `${deal.probability}%`, backgroundColor: probColor, borderRadius: "pill" }} />
+                          </Box>
+                        </Box>
+                        <Text sx={{ mt: 2, fontSize: "10px", color: "subtle", display: "block" }}>Tutup: {deal.closeDate}</Text>
+                      </Box>
+                    )
+                  })}
+                </Flex>
+              </Box>
             )
           })}
-        </div>
+        </Flex>
       ) : (
         /* List view */
-        <div style={{ backgroundColor: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#F8FAFC" }}>
+        <Box sx={{ bg: "white", borderRadius: "xl", border: "1px solid", borderColor: "border", overflow: "hidden" }}>
+          <Box as="table" sx={{ width: "100%", borderCollapse: "collapse" }}>
+            <Box as="thead">
+              <Box as="tr" sx={{ bg: "surface" }}>
                 {["Deal", "Perusahaan", "Nilai", "Tahap", "Probabilitas", "Tanggal Tutup", "Owner"].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: "left",
-                      padding: "14px 20px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#64748B",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      borderBottom: "1px solid #E2E8F0",
-                    }}
-                  >
+                  <Box as="th" key={h} sx={{ textAlign: "left", p: "14px 20px", fontSize: 0, fontWeight: "bold", color: "muted", textTransform: "uppercase", letterSpacing: "0.5px", borderBottom: "1px solid", borderColor: "border" }}>
                     {h}
-                  </th>
+                  </Box>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {mockDeals.map((deal, i) => {
+              </Box>
+            </Box>
+            <Box as="tbody">
+              {deals.map((deal, i) => {
                 const sc = stageConfig[deal.stage]
+                const probColor = probBarColor(deal.probability)
                 return (
-                  <tr key={deal.id} style={{ backgroundColor: i % 2 === 0 ? "#FFFFFF" : "#FAFBFF" }}>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9", fontWeight: 700, fontSize: 13, color: "#1E293B" }}>{deal.title}</td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 13, color: "#64748B" }}>{deal.company}</td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 14, fontWeight: 800, color: "#2563EB" }}>{deal.value}</td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ backgroundColor: sc.bg, color: sc.color, border: `1px solid ${sc.border}`, padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{deal.stage}</span>
-                    </td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, height: 6, backgroundColor: "#E2E8F0", borderRadius: 99 }}>
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${deal.probability}%`,
-                              backgroundColor: deal.probability >= 70 ? "#10B981" : deal.probability >= 40 ? "#F59E0B" : "#2563EB",
-                              borderRadius: 99,
-                            }}
-                          />
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "#64748B", width: 32 }}>{deal.probability}%</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9", fontSize: 13, color: "#64748B" }}>{deal.closeDate}</td>
-                    <td style={{ padding: "14px 20px", borderBottom: "1px solid #F1F5F9" }}>
-                      <div style={{ width: 30, height: 30, borderRadius: "50%", backgroundColor: "#DBEAFE", color: "#2563EB", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {deal.owner}
-                      </div>
-                    </td>
-                  </tr>
+                  <Box as="tr" key={deal.id} sx={{ bg: i % 2 === 0 ? "white" : "#FAFBFF" }}>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontWeight: "bold", fontSize: 2, color: "text" }}>
+                      {deal.title}
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontSize: 2, color: "muted" }}>
+                      {deal.company}
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontSize: 3, fontWeight: "extrabold", color: "primary" }}>
+                      {deal.value}
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Box as="span" sx={{ backgroundColor: sc.bg, color: sc.color, border: `1px solid ${sc.border}`, p: "3px 10px", borderRadius: "pill", fontSize: 1, fontWeight: "semibold" }}>
+                        {deal.stage}
+                      </Box>
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Flex sx={{ alignItems: "center", gap: 2 }}>
+                        <Box sx={{ flex: 1, height: "6px", bg: "border", borderRadius: "pill" }}>
+                          <Box sx={{ height: "100%", width: `${deal.probability}%`, backgroundColor: probColor, borderRadius: "pill" }} />
+                        </Box>
+                        <Text sx={{ fontSize: 1, fontWeight: "semibold", color: "muted", width: 32 }}>{deal.probability}%</Text>
+                      </Flex>
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight", fontSize: 2, color: "muted" }}>
+                      {deal.closeDate}
+                    </Box>
+                    <Box as="td" sx={{ p: "14px 20px", borderBottom: "1px solid", borderColor: "borderLight" }}>
+                      <Flex sx={{ width: 30, height: 30, borderRadius: "circle", bg: "primaryMid", color: "primary", fontSize: "11px", fontWeight: "bold", alignItems: "center", justifyContent: "center" }}>{deal.owner}</Flex>
+                    </Box>
+                  </Box>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </Box>
+          </Box>
+        </Box>
       )}
     </Layout>
   )
@@ -266,4 +302,4 @@ const DealsPage: React.FC<PageProps> = ({ location }) => {
 
 export default DealsPage
 
-export const Head: HeadFC = () => <title>Deals | NexusCRM</title>
+export const Head: HeadFC = () => <title>Deals | nateeCRM</title>
