@@ -1,0 +1,94 @@
+---
+description: nateeCRM project rules — Gatsby 5 + TypeScript + Theme UI CRM application
+globs: ["**/*.tsx", "**/*.ts"]
+alwaysApply: true
+---
+
+# nateeCRM — Project Rules
+
+## Tech Stack
+
+- **Framework:** Gatsby 5 (React 18, file-based routing)
+- **Language:** TypeScript (strict mode, `jsx: react-jsx`, `jsxImportSource: theme-ui`)
+- **Styling:** Theme UI only — all styles via `sx` prop. No CSS modules, no styled-components, no Tailwind.
+- **State:** React hooks + localStorage via `useSettings()` hook
+- **Data Layer:** Pluggable integration adapters in `src/services/integrations.ts`
+
+## File Structure
+
+```
+src/
+├── components/    # Shared React components (PascalCase)
+├── hooks/         # Custom React hooks (use<Name>.ts)
+├── pages/         # File-based routes (kebab-case → auto-route)
+├── services/      # Integration adapters & business logic
+├── images/        # Static images
+└── gatsby-plugin-theme-ui/  # Theme UI theme definition
+```
+
+## Code Patterns
+
+### Page Component Template
+
+```tsx
+import type { HeadFC, PageProps } from "gatsby"
+import Layout from "../components/Layout"
+
+const MyPage: React.FC<PageProps> = ({ location }) => {
+  return (
+    <Layout currentPath={location.pathname} title="Page Title">
+      {/* page content */}
+    </Layout>
+  )
+}
+
+export default MyPage
+export const Head: HeadFC = () => <title>Page Title | nateeCRM</title>
+```
+
+### Styling Rules
+
+- Use Theme UI `sx` prop exclusively
+- Reference theme tokens: `primary`, `surface`, `border`, `muted`, `text`, etc.
+- Theme file: `src/gatsby-plugin-theme-ui/index.ts`
+- Prefer `Box`, `Flex`, `Grid`, `Text`, `Button`, `Input` from `theme-ui`
+
+### Integration Architecture
+
+All integrations implement the `IntegrationAdapter` interface:
+
+```ts
+interface IntegrationAdapter {
+  fetchContacts(): Promise<Contact[]>
+  fetchDeals(): Promise<Deal[]>
+  fetchActivities(): Promise<Activity[]>
+  fetchCompanies(): Promise<Company[]>
+  testConnection(): Promise<boolean>
+}
+```
+
+Use `getAdapter(settings)` factory function to get the correct adapter.
+
+## Language Convention
+
+- **UI text:** Indonesian (e.g. "Tambah Kontak", "Simpan", "Pengaturan")
+- **Code:** English (variables, types, comments)
+
+## Key Rules
+
+1. Never introduce CSS Modules, styled-components, or Tailwind
+2. Always wrap pages in `<Layout>` component
+3. Always export `Head` with title pattern `Page Title | nateeCRM`
+4. Always type pages as `React.FC<PageProps>`
+5. Always use theme tokens — never hardcode colors in components
+6. Mock data stays in page files; real data via adapter layer
+7. API keys stored in localStorage only (client-side app)
+
+## Dev Commands
+
+```bash
+npm run develop   # dev at http://localhost:8001
+npm run build     # production build
+npm run typecheck # TypeScript check
+npm run clean     # clear cache
+```
