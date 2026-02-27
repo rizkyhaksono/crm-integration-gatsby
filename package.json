@@ -16,9 +16,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mdx-js/react": "^2.3.0",
+    "@theme-ui/mdx": "^0.17.4",
     "gatsby": "^5.14.6",
+    "gatsby-plugin-theme-ui": "^0.17.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "theme-ui": "^0.17.4"
   },
   "devDependencies": {
     "@types/node": "^20.11.19",
